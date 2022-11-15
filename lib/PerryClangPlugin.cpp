@@ -545,7 +545,12 @@ void PerryASTConsumer::LoopCacheWriter() {
     if (err_code) {
       continue;
     }
-    AllLoops.insert(PerryLoopItem(abs_path.str().str(),
+    llvm::SmallString<128> real_path;
+    err_code = llvm::sys::fs::real_path(abs_path, real_path, true);
+    if (err_code) {
+      continue;
+    }
+    AllLoops.insert(PerryLoopItem(real_path.str().str(),
                                      BL.getLine(), BL.getColumn(),
                                      EL.getLine(), EL.getColumn()));
   }
