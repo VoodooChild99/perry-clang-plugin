@@ -10,6 +10,7 @@ bool has_source = false;
 std::string OutApiFile;
 std::string OutSuccRetFile;
 std::string OutLoopFile;
+std::string OutStructNameFile;
 std::vector<std::string> cc_params;
 
 static int execvp_cxx(const std::string &file,
@@ -103,6 +104,11 @@ static void edit_params(const std::vector<std::string> &argv) {
       continue;
     }
 
+    if (arg.startswith("-out-periph-struct-file=")) {
+      OutStructNameFile = arg.substr(sizeof("-out-periph-struct-file=") - 1);
+      continue;
+    }
+
     tmp_params.push_back(*it);
   }
 
@@ -122,6 +128,11 @@ static void edit_params(const std::vector<std::string> &argv) {
                 "default to \'loops.yaml\'\n";
       OutLoopFile = "loops.yaml";
     }
+    if (OutStructNameFile.empty()) {
+      outs() << "No path given for the output periph struct name file, "
+                "default to \'periph-struct.yaml\'\n";
+      OutStructNameFile = "periph-struct.yaml";
+    }
 
     add_option("-load");
     add_option(plugin_path);
@@ -139,6 +150,10 @@ static void edit_params(const std::vector<std::string> &argv) {
     add_option("-out-file-loops");
     add_option("-plugin-arg-perry");
     add_option(OutLoopFile);
+    add_option("-plugin-arg-perry");
+    add_option("-out-file-periph-struct");
+    add_option("-plugin-arg-perry");
+    add_option(OutStructNameFile);
   }
 
   cc_params.insert(cc_params.end(), tmp_params.begin(), tmp_params.end());

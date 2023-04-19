@@ -1,6 +1,7 @@
 #include "PerryClangPlugin.h"
 
 #include "clang/Frontend/FrontendPluginRegistry.h"
+#include "clang/Lex/MacroArgs.h"
 
 #include "llvm/Support/YAMLParser.h"
 #include "llvm/Support/YAMLTraits.h"
@@ -285,63 +286,24 @@ struct llvm::yaml::MappingTraits<PerryLoopItem> {
   }
 };
 
-template<>
-struct llvm::yaml::SequenceTraits<std::vector<PerryFuncRetItem>> {
-  static size_t size(IO &io, std::vector<PerryFuncRetItem> &vec) {
-    return vec.size();
-  }
-
-  static PerryFuncRetItem &element(IO &io, std::vector<PerryFuncRetItem> &vec,
-                                   size_t index) {
-    if (index >= vec.size()) {
-      vec.resize(index + 1);
-    }
-    return vec[index];
-  }
-};
-
-template<>
-struct llvm::yaml::SequenceTraits<std::vector<PerryApiItem>> {
-  static size_t size(IO &io, std::vector<PerryApiItem> &vec) {
-    return vec.size();
-  }
-
-  static PerryApiItem &element(IO &io, std::vector<PerryApiItem> &vec,
-                               size_t index) {
-    if (index >= vec.size()) {
-      vec.resize(index + 1);
-    }
-    return vec[index];
-  }
-};
-
-template<>
-struct llvm::yaml::SequenceTraits<std::vector<PerryLoopItem>> {
-  static size_t size(IO &io, std::vector<PerryLoopItem> &vec) {
-    return vec.size();
-  }
-
-  static PerryLoopItem &element(IO &io, std::vector<PerryLoopItem> &vec,
-                               size_t index) {
-    if (index >= vec.size()) {
-      vec.resize(index + 1);
-    }
-    return vec[index];
-  }
-};
+LLVM_YAML_IS_SEQUENCE_VECTOR(PerryFuncRetItem)
+LLVM_YAML_IS_SEQUENCE_VECTOR(PerryApiItem)
+LLVM_YAML_IS_SEQUENCE_VECTOR(PerryLoopItem)
 
 // PerryASTConsumer implementation
 PerryASTConsumer::PerryASTConsumer(ASTContext &Context,
                                    CompilerInstance &CI,
                                    const std::string &outFileSuccRet,
                                    const std::string &outFileApi,
-                                   const std::string &outFileLoops)
+                                   const std::string &outFileLoops,
+                                   const std::string &outFileStructNames)
   : CI(CI), EnumMatcher(EnumValToDecl),
     LoopMatcher(CI.getSourceManager(), Loops),
     Visitor(&Context, SuccRetValMap, EnumValToDecl, FuncDec, FuncDef),
     outFileSuccRet(outFileSuccRet),
     outFileApi(outFileApi),
-    outFileLoops(outFileLoops) {
+    outFileLoops(outFileLoops),
+    outFileStructNames(outFileStructNames) {
   // Enum
   DeclarationMatcher EnumDef = enumDecl().bind("EnumDef");
   Matcher.addMatcher(EnumDef, &EnumMatcher);
@@ -372,6 +334,11 @@ void PerryASTConsumer::updateCache(CacheType ty) {
       CacheName = outFileLoops;
       loader = &PerryASTConsumer::LoopCacheLoader;
       writer = &PerryASTConsumer::LoopCacheWriter;
+      break;
+    case StructName:
+      CacheName = outFileStructNames;
+      loader = &PerryASTConsumer::StructCacheLoader;
+      writer = &PerryASTConsumer::StructCacheWriter;
       break;
   }
   while (true) {
@@ -480,6 +447,27 @@ void PerryASTConsumer::LoopCacheLoader() {
   }
 }
 
+void PerryASTConsumer::StructCacheLoader() {
+  if (llvm::sys::fs::exists(outFileStructNames)) {
+    auto Result = llvm::MemoryBuffer::getFile(outFileStructNames);
+    if (bool(Result)) {
+      std::vector<std::string> ReadItem;
+      llvm::yaml::Input yin(Result->get()->getMemBufferRef());
+      yin >> ReadItem;
+
+      if (bool(yin.error())) {
+        llvm::errs() << "Failed to read data from "
+                     << outFileLoops
+                     << "\n";
+      } else {
+        for (auto &RI : ReadItem) {
+          periphStructNames.insert(RI);
+        }
+      }
+    }
+  }
+}
+
 void PerryASTConsumer::SuccRetCacheWriter() {
   std::vector<PerryFuncRetItem> AllItem;
   for (auto &p : SuccRetValMap) {
@@ -570,6 +558,22 @@ void PerryASTConsumer::LoopCacheWriter() {
   yout << HalLoops;
 }
 
+void PerryASTConsumer::StructCacheWriter() {
+  std::error_code ErrCode;
+  std::vector<std::string> OutStructNames(periphStructNames.begin(),
+                                          periphStructNames.end());
+  llvm::raw_fd_ostream fout(outFileStructNames, ErrCode);
+  if (fout.has_error()) {
+    llvm::errs() << "Failed to open "
+                 << outFileApi 
+                 << " for write: "
+                 << ErrCode.message() << "\nData lost\n";
+    return;
+  }
+  llvm::yaml::Output yout(fout);
+  yout << OutStructNames;
+}
+
 void PerryASTConsumer::HandleTranslationUnit(ASTContext &Context) {
   // run matcher first to collect enums
   Matcher.matchAST(Context);
@@ -580,6 +584,7 @@ void PerryASTConsumer::HandleTranslationUnit(ASTContext &Context) {
   updateCache(SuccRet);
   updateCache(Api);
   updateCache(Loop);
+  updateCache(StructName);
 }
 
 // PerryIncludeProcessor implementation
@@ -600,6 +605,124 @@ InclusionDirective(SourceLocation HashLoc, const Token &IncludeTok,
 
   Inc.insert(FileName.str());
   
+}
+
+// PerryPeriphStructDefProcessor implementation
+PerryPeriphStructDefProcessor::
+PerryPeriphStructDefProcessor(std::set<std::string> &periphStructNames)
+  : periphStructNames(periphStructNames) {}
+
+void PerryPeriphStructDefProcessor::MacroExpands(const Token &MacroNameTok,
+                                                 const MacroDefinition &MD,
+                                                 SourceRange Range,
+                                                 const MacroArgs *Args) {
+  if (Args && Args->getNumMacroArguments()) {
+    return;
+  }
+
+  auto MI = MD.getMacroInfo();
+  if (MI->getNumParams()) {
+    return;
+  }
+
+  if (MI->tokens_empty()) {
+    return;
+  }
+
+  if (!MacroNameTok.is(tok::identifier)) {
+    return;
+  }
+
+  enum parsing_stage {
+    begin = 0,
+    first_lp_seen,
+    second_lp_seen,
+    struct_seen,
+    star_seen,
+    first_rp_seen,
+    numeric_seen,
+    ident_seen,
+    second_rp_seen
+  };
+
+  parsing_stage state = begin;
+  std::string struct_name;
+  for (auto &token : MI->tokens()) {
+    switch (state) {
+      case begin: {
+        if (token.is(tok::l_paren)) {
+          state = first_lp_seen;
+          break;
+        } else {
+          return;
+        }
+      }
+      case first_lp_seen: {
+        if (token.is(tok::l_paren)) {
+          state = second_lp_seen;
+          break;
+        } else {
+          return;
+        }
+      }
+      case second_lp_seen: {
+        if (token.is(tok::identifier)) {
+          struct_name = token.getIdentifierInfo()->getName().str();
+          state = struct_seen;
+          break;
+        } else {
+          return;
+        }
+      }
+      case struct_seen: {
+        if (token.is(tok::star)) {
+          state = star_seen;
+          break;
+        } else {
+          return;
+        }
+      }
+      case star_seen: {
+        if (token.is(tok::r_paren)) {
+          state = first_rp_seen;
+          break;
+        } else {
+          return;
+        }
+      }
+      case first_rp_seen: {
+        if (token.is(tok::numeric_constant)) {
+          state = numeric_seen;
+          break;
+        } else if (token.is(tok::identifier)) {
+          state = ident_seen;
+          break;
+        } else {
+          return;
+        }
+      }
+      case numeric_seen:
+      case ident_seen: {
+        if (token.is(tok::r_paren)) {
+          state = second_rp_seen;
+          break;
+        } else {
+          return;
+        }
+      }
+      case second_rp_seen: break;
+    }
+
+    if (state == second_rp_seen) {
+      break;
+    }
+  }
+
+  if (state != second_rp_seen) {
+    return;
+  }
+
+  periphStructNames.insert(struct_name);
 }
 
 
@@ -636,6 +759,14 @@ public:
         }
         ++i;
         outFileLoops = arg[i];
+      } else if (arg[i] == "-out-file-periph-struct") {
+        if (i + 1 >= num_args) {
+          D.Report(D.getCustomDiagID(DiagnosticsEngine::Error,
+                                     "missing -out-file-periph-struct argument"));
+          return false;
+        }
+        ++i;
+        outFileStructNames = arg[i];
       }
     }
 
@@ -646,12 +777,17 @@ public:
     }
     if (outFileApi.empty()) {
       D.Report(D.getCustomDiagID(DiagnosticsEngine::Error,
-                                        "missing -out-file-api argument"));
+                                 "missing -out-file-api argument"));
       return false;
     }
     if (outFileLoops.empty()) {
       D.Report(D.getCustomDiagID(DiagnosticsEngine::Error,
-                                        "missing -out-file-loops argument"));
+                                 "missing -out-file-loops argument"));
+      return false;
+    }
+    if (outFileStructNames.empty()) {
+      D.Report(D.getCustomDiagID(DiagnosticsEngine::Error,
+                                 "missing -out-file-periph-struct argument"));
       return false;
     }
     return true;
@@ -661,11 +797,13 @@ public:
   CreateASTConsumer(CompilerInstance &CI, llvm::StringRef InFile) override {
     // CI.getPreprocessor().addPPCallbacks(
     //   std::make_unique<PerryIncludeProcessor>(Inc));
-    return 
-      std::make_unique<PerryASTConsumer>(CI.getASTContext(), CI,
-                                         outFileSuccRet,
-                                         outFileApi,
-                                         outFileLoops);
+    auto ret = std::make_unique<PerryASTConsumer>(
+        CI.getASTContext(), CI, outFileSuccRet, outFileApi,
+        outFileLoops, outFileStructNames);
+    CI.getPreprocessor().addPPCallbacks(
+      std::make_unique<PerryPeriphStructDefProcessor>(ret->getStructNames()));
+    return ret;
+      
   }
 
   ActionType getActionType() override {
@@ -676,6 +814,7 @@ private:
   std::string outFileSuccRet;
   std::string outFileApi;
   std::string outFileLoops;
+  std::string outFileStructNames;
 };
 
 // register FrontendAction

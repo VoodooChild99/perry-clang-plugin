@@ -135,7 +135,8 @@ public:
                    clang::CompilerInstance &CI,
                    const std::string &outFileSuccRet,
                    const std::string &outFileApi,
-                   const std::string &outFileLoops);
+                   const std::string &outFileLoops,
+                   const std::string &outFileStructNames);
   void HandleTranslationUnit(clang::ASTContext &Context) override;
 
 private:
@@ -150,14 +151,17 @@ private:
   std::string outFileSuccRet;
   std::string outFileApi;
   std::string outFileLoops;
+  std::string outFileStructNames;
   std::set<std::string> FuncDec;
   std::set<std::string> FuncDef;
   std::set<PerryLoopItem> AllLoops;
+  std::set<std::string> periphStructNames;
 
   enum CacheType {
     SuccRet = 0,
     Api,
-    Loop
+    Loop,
+    StructName
   };
 
   void updateCache(CacheType ty);
@@ -165,10 +169,15 @@ private:
   void SuccRetCacheLoader();
   void ApiCacheLoader();
   void LoopCacheLoader();
+  void StructCacheLoader();
 
   void SuccRetCacheWriter();
   void ApiCacheWriter();
   void LoopCacheWriter();
+  void StructCacheWriter();
+
+public:
+  std::set<std::string> &getStructNames() { return periphStructNames; }
 };
 
 // PerryIncludeProcessor
@@ -189,4 +198,17 @@ public:
 private:
   // clang::CompilerInstance &CI;
   std::set<std::string> &Inc;
+};
+
+// PerryPeriphStructDefProcessor
+class PerryPeriphStructDefProcessor : public clang::PPCallbacks {
+public:
+  PerryPeriphStructDefProcessor(std::set<std::string> &);
+  void MacroExpands(const clang::Token &MacroNameTok,
+                    const clang::MacroDefinition &MD,
+                    clang::SourceRange Range,
+                    const clang::MacroArgs *Args) override;
+
+private:
+  std::set<std::string> &periphStructNames;
 };
