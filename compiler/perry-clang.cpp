@@ -154,6 +154,9 @@ static void edit_params(const std::vector<std::string> &argv) {
     add_option("-out-file-periph-struct");
     add_option("-plugin-arg-perry");
     add_option(OutStructNameFile);
+
+    // UBSan
+    cc_params.push_back("-fsanitize=bounds");
   }
 
   cc_params.insert(cc_params.end(), tmp_params.begin(), tmp_params.end());
