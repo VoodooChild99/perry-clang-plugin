@@ -36,6 +36,7 @@ PerryLoopMatcher(SourceManager &SM, LoopRangeSet &Loops)
 void PerryLoopMatcher::run(const MatchFinder::MatchResult &Result) {
   const ForStmt *ForLoop = Result.Nodes.getNodeAs<ForStmt>("ForLoop");
   const WhileStmt *WhileLoop = Result.Nodes.getNodeAs<WhileStmt>("WhileLoop");
+  const DoStmt *DoWhileLoop = Result.Nodes.getNodeAs<DoStmt>("DoWhileLoop");
   if (ForLoop) {
     Loops.insert(std::make_pair(ForLoop->getForLoc().getRawEncoding(),
                                 ForLoop->getRParenLoc().getRawEncoding()));
@@ -44,6 +45,11 @@ void PerryLoopMatcher::run(const MatchFinder::MatchResult &Result) {
   if (WhileLoop) {
     Loops.insert(std::make_pair(WhileLoop->getWhileLoc().getRawEncoding(),
                                 WhileLoop->getRParenLoc().getRawEncoding()));
+  }
+
+  if (DoWhileLoop) {
+    Loops.insert(std::make_pair(DoWhileLoop->getBody()->getEndLoc().getRawEncoding(),
+                                DoWhileLoop->getRParenLoc().getRawEncoding()));
   }
 
 }
@@ -310,8 +316,10 @@ PerryASTConsumer::PerryASTConsumer(ASTContext &Context,
 
   StatementMatcher ForLoop = forStmt().bind("ForLoop");
   StatementMatcher WhileLoop = whileStmt().bind("WhileLoop");
+  StatementMatcher DoWhileLoop = doStmt().bind("DoWhileLoop");
   Matcher.addMatcher(ForLoop, &LoopMatcher);
   Matcher.addMatcher(WhileLoop, &LoopMatcher);
+  Matcher.addMatcher(DoWhileLoop, &LoopMatcher);
 }
 
 void PerryASTConsumer::updateCache(CacheType ty) {
