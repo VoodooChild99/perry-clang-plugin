@@ -1,10 +1,10 @@
 # THE LIST OF PLUGINS AND THE CORRESPONDING SOURCE FILES
 # ======================================================
 set(CLANG_PLUGIN_LIST
-  Perry
+  perry-clang-plugin
 )
 
-set(Perry_src
+set(perry-clang-plugin_src
   PerryClangPlugin.cpp
 )
 
