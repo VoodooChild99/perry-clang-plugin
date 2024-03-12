@@ -13,6 +13,40 @@ std::string OutLoopFile;
 std::string OutStructNameFile;
 std::vector<std::string> cc_params;
 
+struct FlagSet {
+  std::string flag;
+  bool set;
+
+  FlagSet(const std::string &flag) : flag(flag), set(false) {}
+};
+
+#define FLAG_SET(flag_name, flags)  \
+static FlagSet flag_name(flags);  \
+static inline bool check_ ## flag_name(StringRef arg) {  \
+  if (arg.equals(flag_name.flag)) {  \
+    flag_name.set = true; \
+    return true;  \
+  } \
+  return false; \
+} \
+__attribute__((unused)) \
+static inline bool flag_name ## _is_set() { \
+  return flag_name.set; \
+}
+
+FLAG_SET(no_jump_table_flag, "-fno-jump-tables")
+FLAG_SET(no_inline_flag, "-fno-inline")
+FLAG_SET(optnone_disable_flag, "-disable-O0-optnone")
+FLAG_SET(opt_level_0, "-O0")
+FLAG_SET(opt_level_1, "-O1")
+FLAG_SET(opt_level_2, "-O2")
+FLAG_SET(opt_level_g, "-Og")
+FLAG_SET(dbg_flag, "-g")
+FLAG_SET(dwarf_version2_flag, "-gdwarf-2")
+FLAG_SET(dwarf_version3_flag, "-gdwarf-3")
+FLAG_SET(dwarf_version4_flag, "-gdwarf-4")
+FLAG_SET(dwarf_version5_flag, "-gdwarf-5")
+
 static int execvp_cxx(const std::string &file,
                       const std::vector<std::string> &argv) {
   std::vector<const char*> c_argv;
@@ -157,6 +191,37 @@ static void edit_params(const std::vector<std::string> &argv) {
 
     // UBSan
     cc_params.push_back("-fsanitize=bounds");
+    cc_params.push_back("-fsanitize=enum");
+  }
+
+  // disable inline
+  if (!no_inline_flag_is_set()) {
+    cc_params.push_back(no_inline_flag.flag);
+  }
+
+  // disable jump table
+  if (!no_jump_table_flag_is_set()) {
+    cc_params.push_back(no_jump_table_flag.flag);
+  }
+
+  // disable optnone
+  if (!optnone_disable_flag_is_set()) {
+    add_option(optnone_disable_flag.flag);
+  }
+
+  // preserve dbg info
+  if (!dbg_flag_is_set()) {
+    cc_params.push_back(dbg_flag.flag);
+  }
+
+  // set dwarf version
+  if (!dwarf_version4_flag_is_set()) {
+    cc_params.push_back(dwarf_version4_flag.flag);
+  }
+
+  // set opt level
+  if (!opt_level_g_is_set()) {
+    cc_params.push_back(opt_level_g.flag);
   }
 
   cc_params.insert(cc_params.end(), tmp_params.begin(), tmp_params.end());
@@ -165,6 +230,24 @@ static void edit_params(const std::vector<std::string> &argv) {
 int main(int argc, char* argv[]) {
   std::vector<std::string> _argv;
   for (int i = 0; i < argc; ++i) {
+    StringRef arg(argv[i]);
+    check_no_jump_table_flag(arg);
+    check_no_inline_flag(arg);
+    check_optnone_disable_flag(arg);
+    check_dbg_flag(arg);
+    check_dwarf_version4_flag(arg);
+    if (check_dwarf_version2_flag(arg)  ||
+        check_dwarf_version3_flag(arg)  ||
+        check_dwarf_version5_flag(arg)) {
+      continue;
+    }
+    check_opt_level_g(arg);
+    if (check_opt_level_0(arg)  ||
+        check_opt_level_1(arg)  ||
+        check_opt_level_2(arg)) {
+      continue;
+    }
+    
     _argv.push_back(std::string(argv[i]));
   }
   find_obj(_argv[0]);
