@@ -92,9 +92,9 @@ static void check_name(const std::string &argv0) {
     is_cxx = true;
   }
   if (is_cxx) {
-    cc_params.push_back("clang++");
+    cc_params.push_back(CXX_COMPILER_BIN);
   } else {
-    cc_params.push_back("clang");
+    cc_params.push_back(C_COMPILER_BIN);
   }
 }
 
