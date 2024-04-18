@@ -22,7 +22,7 @@ cd build && make
 ```
 
 ## Usage
-**Option 1: use the provided compiler wrapper**: replace the original compiler with `/path/to/perry-clang/plugin/build/compiler/{perry-clang/perry-clang++}`
+**Option 1: use the provided compiler wrapper**: replace the original compiler with `/path/to/perry-clang-plugin/build/compiler/{perry-clang/perry-clang++}`
 
 **Option 2: manually load the plugin**: add the following flags to clang/clang++:
 
