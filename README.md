@@ -15,10 +15,10 @@ You may load the plugin manually, or use the provided (clang) compiler wrapper t
 
 ## Build
 ```bash
-mkdir build
-cd build
-cmake -DPERRY_Clang_INSTALL_DIR=<Path to LLVM/Clang Installation (e.g., /usr/local)> ..
-make
+cd perry-clang-plugin
+# set LLVM_CONFIG to specify a specific LLVM/Clang installation, e.g., LLVM_CONFIG=llvm-config-15
+./cmake-config.sh
+cd build && make
 ```
 
 ## Usage
